@@ -38,7 +38,7 @@ tool1_roofline <command>
   operator             run one operator case (uses the defaults in main())
   export-model [file]  export the model test matrix to CSV
   export-operator [dir] export the operator test matrix to CSV (split into parts)
-  run-model-tests      run the built-in parity tests
+  run-model-tests      run the built-in checks against the pocket-note numbers
 ```
 
 ### Run the tests (do this first)
@@ -47,7 +47,7 @@ tool1_roofline <command>
 .\calculator\build\tool1_roofline.exe run-model-tests
 ```
 
-Expected:
+Expected (22/22). Recipe 1 is `A1`–`A2c`; comm is `E2`/`E3`; then prefill, PP, DP, MLA, and dies:
 
 ```text
 A1 expected=484 actual=483.767 delta%=0.0480459 => PASS
@@ -55,8 +55,24 @@ A2 expected=0.393 actual=0.393435 delta%=0.110803 => PASS
 A2b expected=10178 actual=10166.9 delta%=0.109532 => PASS
 A2c expected=15.4 actual=15.3754 delta%=0.1599 => PASS
 E2 expected=2.16 actual=2.15541 delta%=0.212675 => PASS
+E2b expected=1 actual=1 delta%=0 => PASS
+E2c expected=453 actual=452.802 delta%=0.0437407 => PASS
 E3 expected=2.16 actual=2.15541 delta%=0.212675 => PASS
-Model tests pass 6/6
+E3b expected=8278 actual=8278.7 delta%=0.00849449 => PASS
+E3c expected=1 actual=1 delta%=0 => PASS
+A1b expected=169.3 actual=169.319 delta%=0.0109924 => PASS
+A1c expected=5.91 actual=5.90603 delta%=0.0672534 => PASS
+P1 expected=984 actual=984.024 delta%=0.00244147 => PASS
+P2 expected=1 actual=1 delta%=0 => PASS
+PP1 expected=0.25 actual=0.25 delta%=0 => PASS
+PP2 expected=8.268 actual=8.26844 delta%=0.00526676 => PASS
+PP3 expected=484 actual=483.767 delta%=0.0480459 => PASS
+PP4 expected=169.3 actual=169.319 delta%=0.0109924 => PASS
+D1 expected=5.91 actual=5.90603 delta%=0.0672534 => PASS
+D2 expected=677.3 actual=677.274 delta%=0.00377369 => PASS
+M1 expected=0.0002186 actual=0.000218624 delta%=0.010979 => PASS
+DIES1 expected=70312.5 actual=70312.5 delta%=0 => PASS
+Model tests pass 22/22
 ```
 
 ### One model case
@@ -69,8 +85,11 @@ Output (with the built-in defaults — Llama-8B on H20, decode, B=1, C=4096):
 
 ```text
 Model: Llama-8B on H20
+BytesPerToken_GB=8.26844, TPS_comp_final=9250, TPS_mem=483.767, TPS_roof=483.767
 Bottleneck=mem, TPS_Effective=169.319, TPS_Cluster=169.319, Latency_ms=5.90603
 ```
+
+Those intermediate values are Recipe 1 Case A in the pocket note.
 
 ### Export CSV
 
@@ -109,7 +128,7 @@ Defined in `BuildHardwareDb()` in `src/main.cpp`. Key fields shown below (full l
 | `GB300` | 2500 | 1250 | 8500 | 192 | 1800 | 2 | 0.45 | 0.35 |
 | `Custom` | 307 | 153 | 4000 | 144 | 800 | 2 | 0.45 | 0.70 |
 
-Other fields per card: `cards_per_node`, `fp8_vector`, `bf16_vector`, `fp8_sparse`, `bf16_sparse`, `sfu`, `sfu_eff`, `d2d_bw`, `rdma_bw`, `pcie_bw`. The `dies` field divides per-card `TF` and `BW` to get per-die values (H20 is a single-die package, so `dies = 1` and it has no effect).
+Other fields per card: `cards_per_node`, `fp8_vector`, `bf16_vector`, `fp8_sparse`, `bf16_sparse`, `sfu`, `sfu_eff`, `d2d_bw`, `rdma_bw`, `pcie_bw`. The `dies` field divides per-card `TF` and `BW` to get per-die values (H20 is a single-die package, so `dies = 1` and it has no effect). On a dual-die card (B200, GB300), set `TP >= dies` if you want to feed the whole package.
 
 **The `η_comp` / `η_mem` values are placeholders, not measurements** — replace them with your own for your hardware (see the pocket note §1).
 
@@ -150,7 +169,7 @@ Defined in `BuildOperatorDb()`. The operator profiler is a separate, finer-grain
 | `dp` | `1` | data parallel (scales cluster throughput, not one user's latency) |
 | `ep` | `1` | expert parallel (MoE only) |
 | `nodes` | `1` | number of nodes (for cluster card count) |
-| `micro_batch` | `1` | prefill PP bubble: micro-batch count |
+| `micro_batch` | `1` | prefill PP: micro-batch **size** (count = ceil(`B × S / size`)) |
 | `pp_placement` | `"Intra-node"` | `"Intra-node"` or `"Inter-node"` |
 
 Example — to run Llama-70B on H20, decode, TP=8, B=256, edit the `model` block:
@@ -224,7 +243,7 @@ The `η_comp` / `η_mem` are stored per card in `BuildHardwareDb()` (the `comp_e
 
 **Does:**
 - Model-level roofline (weights + KV cache) for decode and prefill.
-- TP / PP / EP / DP parallelism, with communication time folded into the compute path.
+- TP / PP / EP / DP parallelism, with communication time folded into the compute path. PP shards **capacity** and cuts decode compute (`pp_eff = 1/PP`); it does not reduce decode BytesPerToken.
 - Bottleneck label (memory / compute / comm-suspect) and per-replica + cluster throughput.
 - An operator profiler (`operator` command) for finer-grained per-operator views.
 

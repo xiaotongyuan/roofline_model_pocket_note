@@ -65,7 +65,7 @@ struct ModelInput {
   long dp = 1;
   long ep = 1;
   long nodes = 1;
-  long micro_batch = 1;
+  long micro_batch = 1;  // prefill PP: micro-batch SIZE (count = ceil(B*S / size))
   std::string pp_placement = "Intra-node";
 };
 
@@ -315,8 +315,11 @@ ModelOutput CalculateModel(const ModelInput& input, const std::map<std::string, 
   out.e20_kv_gb_per_token = mdl.use_mla
                                 ? (2.0 * mdl.layers * mdl.hidden * mdl.mla_kv_factor * input.bytes_per_param / kOneE9)
                                 : (2.0 * mdl.layers * (mdl.hidden / std::max(1.0, mdl.q_heads)) * mdl.kv_heads * input.bytes_per_param / kOneE9);
+  // Decode traffic: PP does not divide this. A token still walks every stage, so
+  // the replica still reads all weights and all KV. PP only shards capacity
+  // (see b27) and cuts compute via pp_eff = 1/PP.
   out.e21_bytes_per_token_gb = std::max(
-      1e-12, out.e19_weight_active_gb / (std::max(1L, tp) * std::max(1L, pp) * std::max(1L, batch)) +
+      1e-12, out.e19_weight_active_gb / (std::max(1L, tp) * std::max(1L, batch)) +
                  out.e20_kv_gb_per_token * ctx / std::max(1L, tp));
   out.e22_flops_per_token = 2.0 * out.e10_active_params * kOneE9;
   out.e23_pf_comp = mdl.moe ? tp * ep : tp;
@@ -434,12 +437,14 @@ ModelOutput CalculateModel(const ModelInput& input, const std::map<std::string, 
     tps_eff = tps_roof * out.e7_comp_eff;
   } else {
     tps_roof = std::min(tps_comp_final, out.e26_tps_mem);
-    if (tp_comm_pct > 30) {
-      bottleneck = "comm";
-      bottleneck_detail = "TP_comm";
-    } else if (out.e26_tps_mem < tps_comp_final) {
+    // Memory wall first: comm is hidden behind t_mem, so never label "comm"
+    // (or apply η_comp) when the roof is memory.
+    if (out.e26_tps_mem < tps_comp_final) {
       bottleneck = "mem";
       if (pp_eff < 0.5) bottleneck_detail = "PP_bubble";
+    } else if (tp_comm_pct > 30) {
+      bottleneck = "comm";
+      bottleneck_detail = "TP_comm";
     } else {
       bottleneck = "comp";
       if (pp_eff < 0.5) bottleneck_detail = "PP_bubble";
@@ -671,8 +676,42 @@ void RunModelTests(const std::map<std::string, Hardware>& hw_db, const std::map<
   tests.push_back({"A2c", a, [](const ModelOutput& o) { return o.b40_latency_ms; }, 15.4});
   a.batch = 1; a.model = "Llama-70B"; a.tp = 8;
   tests.push_back({"E2", a, [](const ModelOutput& o) { return o.e34_tp_comm_overhead_pct; }, 2.16});
+  tests.push_back({"E2b", a, [](const ModelOutput& o) { return o.bottleneck == "mem" ? 1.0 : 0.0; }, 1.0});
+  tests.push_back({"E2c", a, [](const ModelOutput& o) { return o.e26_tps_mem; }, 453});
   a.batch = 256;
   tests.push_back({"E3", a, [](const ModelOutput& o) { return o.e34_tp_comm_overhead_pct; }, 2.16});
+  tests.push_back({"E3b", a, [](const ModelOutput& o) { return o.e36_tps_comp_after_comm; }, 8278});
+  tests.push_back({"E3c", a, [](const ModelOutput& o) { return o.bottleneck == "comp" || o.bottleneck == "comm" ? 1.0 : 0.0; }, 1.0});
+
+  ModelInput a1 = {};
+  a1.hardware = "H20"; a1.model = "Llama-8B"; a1.stage = "Decode"; a1.batch = 1; a1.context = 4096;
+  tests.push_back({"A1b", a1, [](const ModelOutput& o) { return o.b37_tps_effective; }, 169.3});
+  tests.push_back({"A1c", a1, [](const ModelOutput& o) { return o.b40_latency_ms; }, 5.91});
+
+  ModelInput prefill = a1;
+  prefill.stage = "Prefill";
+  tests.push_back({"P1", prefill, [](const ModelOutput& o) { return o.b40_latency_ms; }, 984.0});
+  tests.push_back({"P2", prefill, [](const ModelOutput& o) { return o.bottleneck == "comp" ? 1.0 : 0.0; }, 1.0});
+
+  ModelInput pp = a1;
+  pp.pp = 4;
+  tests.push_back({"PP1", pp, [](const ModelOutput& o) { return o.e32_pp_eff; }, 0.25});
+  tests.push_back({"PP2", pp, [](const ModelOutput& o) { return o.e21_bytes_per_token_gb; }, 8.268});
+  tests.push_back({"PP3", pp, [](const ModelOutput& o) { return o.e26_tps_mem; }, 484});
+  tests.push_back({"PP4", pp, [](const ModelOutput& o) { return o.b37_tps_effective; }, 169.3});
+
+  ModelInput dp = a1;
+  dp.dp = 4;
+  tests.push_back({"D1", dp, [](const ModelOutput& o) { return o.b40_latency_ms; }, 5.91});
+  tests.push_back({"D2", dp, [](const ModelOutput& o) { return o.b39_tps_cluster; }, 677.3});
+
+  ModelInput mla;
+  mla.hardware = "H20"; mla.model = "DeepSeek-V3"; mla.stage = "Decode";
+  tests.push_back({"M1", mla, [](const ModelOutput& o) { return o.e20_kv_gb_per_token; }, 0.0002186});
+
+  ModelInput dies;
+  dies.hardware = "B200"; dies.model = "Llama-8B"; dies.stage = "Decode";
+  tests.push_back({"DIES1", dies, [](const ModelOutput& o) { return o.e25_tps_comp_raw; }, 70312.5});
 
   long pass = 0;
   for (const auto& t : tests) {
@@ -695,7 +734,7 @@ void PrintUsage() {
                "  operator             run one default operator case\n"
                "  export-model [file]  export test_results_from_calculator.csv\n"
                "  export-operator [dir] export operator_test_partXX.csv\n"
-               "  run-model-tests      run selected VBA parity tests\n";
+               "  run-model-tests      run the built-in checks against the pocket-note numbers\n";
 }
 
 }  // namespace
@@ -715,6 +754,10 @@ int main(int argc, char** argv) {
     in.bytes_per_param = model_db.at(in.model).default_bpp;
     const ModelOutput o = CalculateModel(in, hw_db, model_db);
     std::cout << "Model: " << in.model << " on " << in.hardware << '\n';
+    std::cout << "BytesPerToken_GB=" << o.e21_bytes_per_token_gb
+              << ", TPS_comp_final=" << o.e36_tps_comp_after_comm
+              << ", TPS_mem=" << o.e26_tps_mem
+              << ", TPS_roof=" << o.b35_tps_roof << '\n';
     std::cout << "Bottleneck=" << o.bottleneck << ", TPS_Effective=" << o.b37_tps_effective
               << ", TPS_Cluster=" << o.b39_tps_cluster << ", Latency_ms=" << o.b40_latency_ms << '\n';
     return 0;
