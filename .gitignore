@@ -1,0 +1,17 @@
+# Build output
+calculator/build/
+build/
+
+# Local paid note drafts (not for public repo)
+README_v00.md
+README_v01.md
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# OS
+Thumbs.db
+.DS_Store
