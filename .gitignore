@@ -1,11 +1,9 @@
 # Build output
 calculator/build/
 build/
-public/
 
-# Local paid note drafts (not for public repo)
-README_v00.md
-README_v01.md
+# Leftover paid folder if still on disk; notes live outside this repo
+public/
 
 # IDE
 .vs/

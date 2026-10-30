@@ -1,10 +1,10 @@
 # Calculator — LLM Inference Roofline (model level)
 
-A single-file C++17 program that computes the model-level roofline for LLM inference. It is the companion to the *LLM Inference Roofline — A Pocket Note* (the formulas and recipes are documented there; sold separately — link to be added).
+A single-file C++17 program for Pocket Notes **1 (model)** and **2 (operator)**. Note 3 (layer-accumulated) uses a different program.
 
 This README tells you **how to run it, what options exist, and how to customize a run**. It does **not** explain the formulas — those live in the pocket note.
 
-> **Notebook / ebook link:** _to be filled in_ (store URL will be added here once published).
+> **Book 1 (ebook):** [LLM Inference Roofline on Amazon](https://www.amazon.com/dp/B0HPSHMFZ7) (ASIN `B0HPSHMFZ7`). Book 2 is not published yet.
 
 ---
 

@@ -1,8 +1,16 @@
 # Roofline Model Pocket Note — Calculator
 
-This repo holds the **companion calculator** (C++17) for the *LLM Inference Roofline — A Pocket Note*. The note itself (the formulas, the recipes, the explanations) is sold separately — link to be added here once published.
+This repo holds the **companion calculator** (C++17) for Pocket Notes **1 (model)**
+and **2 (operator)**. The notes are sold separately:
 
-The calculator computes the model-level roofline for LLM inference: weights vs KV cache, decode vs prefill, and the TP/PP/EP/DP parallel paths. It is a single C++ file so you can read the whole thing.
+- Book 1 — *LLM Inference Roofline*: [Amazon](https://www.amazon.com/dp/B0HPSHMFZ7) (ASIN `B0HPSHMFZ7`)
+- Book 2 — operator (by shape): not published yet
+
+Note 3 (layer-accumulated model) uses a **separate** program, not this calculator.
+
+The program is a single C++ file. `model` is the Book 1 closed-form roofline
+(weights vs KV, prefill vs decode, TP/PP/EP/DP). `operator` is the Book 2
+per-shape roofline (one kernel vs the hardware ridge point).
 
 For **how to run it and what options exist**, see [`calculator/README.md`](calculator/README.md).
 
