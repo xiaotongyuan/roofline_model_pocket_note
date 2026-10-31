@@ -181,10 +181,12 @@ struct OperatorOutput {
 };
 
 std::map<std::string, Hardware> BuildHardwareDb() {
+  // Matrix TFLOPS are published dense peaks (H20 FP8 296, B200 FP8 4500).
+  // Sparse fields are 2:4. Vector/SFU left as first-order placeholders.
   return {
-      {"H20", {"H20", 8, 148, 74, 30, 15, 296, 148, 7.5, 0.85, 4000, 0.35, 0, 900, 400, 128, 96, 0.45, 1}},
-      {"B200", {"B200", 8, 2250, 1125, 450, 225, 4500, 2250, 112.5, 0.85, 8000, 0.35, 10000, 1800, 800, 128, 192, 0.45, 2}},
-      {"GB300", {"GB300", 8, 2500, 1250, 500, 250, 5000, 2500, 125, 0.85, 8500, 0.35, 10000, 1800, 800, 128, 192, 0.45, 2}},
+      {"H20", {"H20", 8, 296, 148, 30, 15, 592, 296, 7.5, 0.85, 4000, 0.35, 0, 900, 400, 128, 96, 0.45, 1}},
+      {"B200", {"B200", 8, 4500, 2250, 450, 225, 9000, 4500, 112.5, 0.85, 8000, 0.35, 10000, 1800, 800, 128, 192, 0.45, 2}},
+      {"GB300", {"GB300", 8, 5000, 2500, 500, 250, 10000, 5000, 125, 0.85, 8000, 0.35, 10000, 1800, 800, 128, 279, 0.45, 2}},
       {"Custom", {"Custom", 8, 307, 153, 38, 19, 307, 153, 7.5, 0.85, 4000, 0.7, 3400, 800, 100, 128, 144, 0.45, 2}},
   };
 }
@@ -193,8 +195,8 @@ std::map<std::string, Model> BuildModelDb() {
   return {
       {"Llama-8B", {"Llama-8B", 8, 8, 32, 4096, 32, 8, false, 1, false, 0, 0, 1}},
       {"Llama-70B", {"Llama-70B", 70, 70, 80, 8192, 64, 8, false, 1, false, 0, 0, 1}},
-      {"Llama-405B", {"Llama-405B", 405, 405, 128, 16384, 128, 8, false, 1, false, 0, 0, 1}},
-      {"DeepSeek-V3", {"DeepSeek-V3", 671, 37, 61, 7168, 128, 16, true, 0.25, true, 256, 8, 1}},
+      {"Llama-405B", {"Llama-405B", 405, 405, 126, 16384, 128, 8, false, 1, false, 0, 0, 1}},
+      {"DeepSeek-V3", {"DeepSeek-V3", 671, 37, 61, 7168, 128, 16, true, 0.04, true, 256, 8, 1}},
       {"Qwen2.5-72B", {"Qwen2.5-72B", 72, 72, 80, 8192, 64, 8, false, 1, false, 0, 0, 1}},
       {"Mixtral-8x7B", {"Mixtral-8x7B", 47, 13, 32, 4096, 32, 8, false, 1, true, 8, 2, 1}},
   };
@@ -392,6 +394,7 @@ ModelOutput CalculateModel(const ModelInput& input, const std::map<std::string, 
                                             ? (2.0 * (tp - 1.0) / tp * mdl.hidden * batch * input.bytes_per_param)
                                             : (2.0 * (tp - 1.0) / tp * mdl.hidden * batch * ctx * input.bytes_per_param);
     const double layers_per_stage = mdl.layers / std::max(1L, pp);
+    // ×2 = attention + FFN AllReduce per layer (the 2 in 2*(TP-1)/TP is the ring factor)
     const double all_reduce_total = layers_per_stage * 2.0 * all_reduce_per_layer;
     if (bw_tp > 0) tp_comm_time = all_reduce_total / (bw_tp * kOneE9);
     if (tps_after_pp > 0 && tp_comm_time > 0) {
@@ -673,14 +676,15 @@ void RunModelTests(const std::map<std::string, Hardware>& hw_db, const std::map<
   a.batch = 64;
   tests.push_back({"A2", a, [](const ModelOutput& o) { return o.e21_bytes_per_token_gb; }, 0.393});
   tests.push_back({"A2b", a, [](const ModelOutput& o) { return o.e26_tps_mem; }, 10178});
-  tests.push_back({"A2c", a, [](const ModelOutput& o) { return o.b40_latency_ms; }, 15.4});
+  tests.push_back({"A2c", a, [](const ModelOutput& o) { return o.b40_latency_ms; }, 18.0});
+  tests.push_back({"A2d", a, [](const ModelOutput& o) { return o.bottleneck == "mem" ? 1.0 : 0.0; }, 1.0});
   a.batch = 1; a.model = "Llama-70B"; a.tp = 8;
-  tests.push_back({"E2", a, [](const ModelOutput& o) { return o.e34_tp_comm_overhead_pct; }, 2.16});
+  tests.push_back({"E2", a, [](const ModelOutput& o) { return o.e34_tp_comm_overhead_pct; }, 4.31});
   tests.push_back({"E2b", a, [](const ModelOutput& o) { return o.bottleneck == "mem" ? 1.0 : 0.0; }, 1.0});
   tests.push_back({"E2c", a, [](const ModelOutput& o) { return o.e26_tps_mem; }, 453});
   a.batch = 256;
-  tests.push_back({"E3", a, [](const ModelOutput& o) { return o.e34_tp_comm_overhead_pct; }, 2.16});
-  tests.push_back({"E3b", a, [](const ModelOutput& o) { return o.e36_tps_comp_after_comm; }, 8278});
+  tests.push_back({"E3", a, [](const ModelOutput& o) { return o.e34_tp_comm_overhead_pct; }, 4.31});
+  tests.push_back({"E3b", a, [](const ModelOutput& o) { return o.e36_tps_comp_after_comm; }, 16215});
   tests.push_back({"E3c", a, [](const ModelOutput& o) { return o.bottleneck == "comp" || o.bottleneck == "comm" ? 1.0 : 0.0; }, 1.0});
 
   ModelInput a1 = {};
@@ -690,7 +694,7 @@ void RunModelTests(const std::map<std::string, Hardware>& hw_db, const std::map<
 
   ModelInput prefill = a1;
   prefill.stage = "Prefill";
-  tests.push_back({"P1", prefill, [](const ModelOutput& o) { return o.b40_latency_ms; }, 984.0});
+  tests.push_back({"P1", prefill, [](const ModelOutput& o) { return o.b40_latency_ms; }, 492.0});
   tests.push_back({"P2", prefill, [](const ModelOutput& o) { return o.bottleneck == "comp" ? 1.0 : 0.0; }, 1.0});
 
   ModelInput pp = a1;
@@ -707,11 +711,17 @@ void RunModelTests(const std::map<std::string, Hardware>& hw_db, const std::map<
 
   ModelInput mla;
   mla.hardware = "H20"; mla.model = "DeepSeek-V3"; mla.stage = "Decode";
-  tests.push_back({"M1", mla, [](const ModelOutput& o) { return o.e20_kv_gb_per_token; }, 0.0002186});
+  tests.push_back({"M1", mla, [](const ModelOutput& o) { return o.e20_kv_gb_per_token; }, 0.0000350});
+
+  ModelInput flip;
+  flip.hardware = "H20"; flip.model = "Llama-8B"; flip.stage = "Decode";
+  flip.batch = 64; flip.context = 1024;
+  tests.push_back({"F1", flip, [](const ModelOutput& o) { return o.bottleneck == "comp" ? 1.0 : 0.0; }, 1.0});
+  tests.push_back({"F1b", flip, [](const ModelOutput& o) { return o.e26_tps_mem; }, 20822});
 
   ModelInput dies;
   dies.hardware = "B200"; dies.model = "Llama-8B"; dies.stage = "Decode";
-  tests.push_back({"DIES1", dies, [](const ModelOutput& o) { return o.e25_tps_comp_raw; }, 70312.5});
+  tests.push_back({"DIES1", dies, [](const ModelOutput& o) { return o.e25_tps_comp_raw; }, 140625});
 
   long pass = 0;
   for (const auto& t : tests) {

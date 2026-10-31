@@ -47,22 +47,23 @@ tool1_roofline <command>
 .\calculator\build\tool1_roofline.exe run-model-tests
 ```
 
-Expected (22/22). Recipe 1 is `A1`–`A2c`; comm is `E2`/`E3`; then prefill, PP, DP, MLA, and dies:
+Expected (25/25). Recipe 1 is `A1`–`A2d`; the C=1024 flip is `F1`/`F1b`; comm is `E2`/`E3`; then prefill, PP, DP, MLA, and dies:
 
 ```text
 A1 expected=484 actual=483.767 delta%=0.0480459 => PASS
 A2 expected=0.393 actual=0.393435 delta%=0.110803 => PASS
 A2b expected=10178 actual=10166.9 delta%=0.109532 => PASS
-A2c expected=15.4 actual=15.3754 delta%=0.1599 => PASS
-E2 expected=2.16 actual=2.15541 delta%=0.212675 => PASS
+A2c expected=18 actual=17.9856 delta%=0.0798842 => PASS
+A2d expected=1 actual=1 delta%=0 => PASS
+E2 expected=4.31 actual=4.31081 delta%=0.0188502 => PASS
 E2b expected=1 actual=1 delta%=0 => PASS
 E2c expected=453 actual=452.802 delta%=0.0437407 => PASS
-E3 expected=2.16 actual=2.15541 delta%=0.212675 => PASS
-E3b expected=8278 actual=8278.7 delta%=0.00849449 => PASS
+E3 expected=4.31 actual=4.31081 delta%=0.0188502 => PASS
+E3b expected=16215 actual=16215.3 delta%=0.00169964 => PASS
 E3c expected=1 actual=1 delta%=0 => PASS
 A1b expected=169.3 actual=169.319 delta%=0.0109924 => PASS
 A1c expected=5.91 actual=5.90603 delta%=0.0672534 => PASS
-P1 expected=984 actual=984.024 delta%=0.00244147 => PASS
+P1 expected=492 actual=492.012 delta%=0.00244147 => PASS
 P2 expected=1 actual=1 delta%=0 => PASS
 PP1 expected=0.25 actual=0.25 delta%=0 => PASS
 PP2 expected=8.268 actual=8.26844 delta%=0.00526676 => PASS
@@ -70,9 +71,11 @@ PP3 expected=484 actual=483.767 delta%=0.0480459 => PASS
 PP4 expected=169.3 actual=169.319 delta%=0.0109924 => PASS
 D1 expected=5.91 actual=5.90603 delta%=0.0672534 => PASS
 D2 expected=677.3 actual=677.274 delta%=0.00377369 => PASS
-M1 expected=0.0002186 actual=0.000218624 delta%=0.010979 => PASS
-DIES1 expected=70312.5 actual=70312.5 delta%=0 => PASS
-Model tests pass 22/22
+M1 expected=3.5e-05 actual=3.49798e-05 delta%=0.0576 => PASS
+F1 expected=1 actual=1 delta%=0 => PASS
+F1b expected=20822 actual=20821.5 delta%=0.0022691 => PASS
+DIES1 expected=140625 actual=140625 delta%=0 => PASS
+Model tests pass 25/25
 ```
 
 ### One model case
@@ -85,7 +88,7 @@ Output (with the built-in defaults — Llama-8B on H20, decode, B=1, C=4096):
 
 ```text
 Model: Llama-8B on H20
-BytesPerToken_GB=8.26844, TPS_comp_final=9250, TPS_mem=483.767, TPS_roof=483.767
+BytesPerToken_GB=8.26844, TPS_comp_final=18500, TPS_mem=483.767, TPS_roof=483.767
 Bottleneck=mem, TPS_Effective=169.319, TPS_Cluster=169.319, Latency_ms=5.90603
 ```
 
@@ -108,12 +111,12 @@ Defined in `BuildModelDb()` in `src/main.cpp`. Fields: total params (B), active 
 |---|---:|---:|---:|---:|---:|---:|:---:|:---:|:---:|---:|
 | `Llama-8B` | 8 | 8 | 32 | 4096 | 32 | 8 | no | no | 0 / 0 | 1 (FP8) |
 | `Llama-70B` | 70 | 70 | 80 | 8192 | 64 | 8 | no | no | 0 / 0 | 1 |
-| `Llama-405B` | 405 | 405 | 128 | 16384 | 128 | 8 | no | no | 0 / 0 | 1 |
+| `Llama-405B` | 405 | 405 | 126 | 16384 | 128 | 8 | no | no | 0 / 0 | 1 |
 | `Qwen2.5-72B` | 72 | 72 | 80 | 8192 | 64 | 8 | no | no | 0 / 0 | 1 |
 | `Mixtral-8x7B` | 47 | 13 | 32 | 4096 | 32 | 8 | no | yes | 8 / 2 | 1 |
-| `DeepSeek-V3` | 671 | 37 | 61 | 7168 | 128 | 16 | yes (factor 0.25) | yes | 256 / 8 | 1 |
+| `DeepSeek-V3` | 671 | 37 | 61 | 7168 | 128 | 16 | yes (factor 0.04) | yes | 256 / 8 | 1 |
 
-For MoE models, **active params** is the routed-expert parameter count (what the compute roofline uses); **total params** is for VRAM / capacity. `DeepSeek-V3` uses MLA latent KV (the `MLA_factor = 0.25` term), which is a different KV formula from GQA — see the pocket note.
+For MoE models, **active params** is the routed-expert parameter count (what the compute roofline uses); **total params** is for VRAM / capacity. `DeepSeek-V3` uses MLA latent KV (`MLA_factor ≈ 0.04` matches V3's 512+64 latent), which is a different KV formula from GQA — see the pocket note.
 
 ---
 
@@ -121,11 +124,13 @@ For MoE models, **active params** is the routed-expert parameter count (what the
 
 Defined in `BuildHardwareDb()` in `src/main.cpp`. Key fields shown below (full list in the `Hardware` struct):
 
+Matrix TFLOPS are published **dense** peaks (H20 FP8 296, not the sparse 592).
+
 | Card | FP8 mat (TFLOPS) | BF16 mat (TFLOPS) | HBM BW (GB/s) | VRAM (GB) | NVLink (GB/s) | dies | η_comp | η_mem |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `H20` | 148 | 74 | 4000 | 96 | 900 | 1 | 0.45 | 0.35 |
-| `B200` | 2250 | 1125 | 8000 | 192 | 1800 | 2 | 0.45 | 0.35 |
-| `GB300` | 2500 | 1250 | 8500 | 192 | 1800 | 2 | 0.45 | 0.35 |
+| `H20` | 296 | 148 | 4000 | 96 | 900 | 1 | 0.45 | 0.35 |
+| `B200` | 4500 | 2250 | 8000 | 192 | 1800 | 2 | 0.45 | 0.35 |
+| `GB300` | 5000 | 2500 | 8000 | 279 | 1800 | 2 | 0.45 | 0.35 |
 | `Custom` | 307 | 153 | 4000 | 144 | 800 | 2 | 0.45 | 0.70 |
 
 Other fields per card: `cards_per_node`, `fp8_vector`, `bf16_vector`, `fp8_sparse`, `bf16_sparse`, `sfu`, `sfu_eff`, `d2d_bw`, `rdma_bw`, `pcie_bw`. The `dies` field divides per-card `TF` and `BW` to get per-die values (H20 is a single-die package, so `dies = 1` and it has no effect). On a dual-die card (B200, GB300), set `TP >= dies` if you want to feed the whole package.
