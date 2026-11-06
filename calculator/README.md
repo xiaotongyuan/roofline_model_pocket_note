@@ -4,7 +4,7 @@ A single-file C++17 program for Pocket Notes **1 (model)** and **2 (operator)**.
 
 This README tells you **how to run it, what options exist, and how to customize a run**. It does **not** explain the formulas — those live in the pocket note.
 
-> **Book 1 (ebook):** [LLM Inference Roofline on Amazon](https://www.amazon.com/dp/B0HPSHMFZ7) (ASIN `B0HPSHMFZ7`). Book 2 is not published yet.
+> **Book 1:** [Kindle](https://www.amazon.com/dp/B0HPSHMFZ7) (`B0HPSHMFZ7`), [paperback](https://www.amazon.com/dp/B0HPYGV8KB) (`B0HPYGV8KB`). **Book 2:** [Kindle](https://www.amazon.com/dp/B0HQHBSTN3) (`B0HQHBSTN3`), [paperback](https://www.amazon.com/dp/B0HQJYRHMC) (`B0HQJYRHMC`).
 
 ---
 

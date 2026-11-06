@@ -3,8 +3,8 @@
 This repo holds the **companion calculator** (C++17) for Pocket Notes **1 (model)**
 and **2 (operator)**. The notes are sold separately:
 
-- Book 1 — *LLM Inference Roofline*: [Amazon](https://www.amazon.com/dp/B0HPSHMFZ7) (ASIN `B0HPSHMFZ7`)
-- Book 2 — operator (by shape): not published yet
+- Book 1 — *LLM Inference Roofline*: [Kindle](https://www.amazon.com/dp/B0HPSHMFZ7) (`B0HPSHMFZ7`), [paperback](https://www.amazon.com/dp/B0HPYGV8KB) (`B0HPYGV8KB`)
+- Book 2 — *LLM Inference Operators*: [Kindle](https://www.amazon.com/dp/B0HQHBSTN3) (`B0HQHBSTN3`), [paperback](https://www.amazon.com/dp/B0HQJYRHMC) (`B0HQJYRHMC`)
 
 Note 3 (layer-accumulated model) uses a **separate** program, not this calculator.
 
